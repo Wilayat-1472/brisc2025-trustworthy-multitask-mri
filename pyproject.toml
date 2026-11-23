@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "brisc-mri"
+version = "0.1.0"
+description = "Plane-conditioned multi-task MRI research pipeline and interface"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = [
+  "torch>=2.3,<3", "torchvision>=0.18,<1", "numpy>=1.24,<3",
+  "pandas>=2,<3", "scikit-learn>=1.3,<2", "Pillow>=10,<13",
+  "matplotlib>=3.7,<4", "streamlit>=1.40,<2",
+]
+
+[project.optional-dependencies]
+data = ["kagglehub>=0.2,<1", "imagehash>=4.3,<5", "scipy>=1.11,<2"]
+colab = ["gradio>=5,<7"]
+dev = ["pytest>=8,<10"]
+
+[tool.setuptools.packages.find]
+include = ["brisc_mri*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
