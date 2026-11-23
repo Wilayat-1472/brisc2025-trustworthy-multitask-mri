@@ -1,5 +1,7 @@
 # Plane-Conditioned & Uncertainty-Aware Multi-Task Brain Tumor MRI Pipeline (BRISC 2025)
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Wilayat-1472/brisc2025-trustworthy-multitask-mri/blob/main/notebooks/brisc2025_multitask_pipeline.ipynb)
+[![View in nbviewer](https://img.shields.io/badge/Render-nbviewer-orange?logo=jupyter)](https://nbviewer.org/github/Wilayat-1472/brisc2025-trustworthy-multitask-mri/blob/main/notebooks/brisc2025_multitask_pipeline.ipynb)
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![PyTorch](https://img.shields.io/badge/PyTorch-2.1%2B-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
 [![Dataset](https://img.shields.io/badge/Dataset-BRISC%202025-20BEFF?logo=kaggle&logoColor=white)](https://www.kaggle.com/datasets/briscdataset/brisc2025)
@@ -21,6 +23,7 @@ Unlike standard image classification benchmarks that evaluate on leaky slice spl
 5. [Experimental Results](#5-experimental-results)
 6. [Repository Structure](#6-repository-structure)
 7. [Quickstart & Reproduction](#7-quickstart--reproduction)
+   - [Interactive Notebook Viewers & Troubleshooting](#interactive-notebook-viewers--troubleshooting)
 8. [Citation & Acknowledgments](#8-citation--acknowledgments)
 
 ---
@@ -156,6 +159,27 @@ brisc2025-trustworthy-multitask-mri/
 ---
 
 ## 7. Quickstart & Reproduction
+
+### Interactive Notebook Viewers & Troubleshooting
+
+| Platform | Link | Purpose |
+| :--- | :--- | :--- |
+| **Google Colab** | [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Wilayat-1472/brisc2025-trustworthy-multitask-mri/blob/main/notebooks/brisc2025_multitask_pipeline.ipynb) | Full end-to-end training and inference on free T4 GPU |
+| **Jupyter nbviewer** | [![View in nbviewer](https://img.shields.io/badge/Render-nbviewer-orange?logo=jupyter)](https://nbviewer.org/github/Wilayat-1472/brisc2025-trustworthy-multitask-mri/blob/main/notebooks/brisc2025_multitask_pipeline.ipynb) | Fast server-side static preview without client-side rendering limits |
+
+#### Notice on GitHub's "Unable to render code block" Issue
+When viewing Jupyter Notebooks (`.ipynb`) directly within GitHub's web interface, you may occasionally encounter the message **"Unable to render code block"** or a stalled preview.
+
+**Root Causes of This GitHub Behavior:**
+1. **GitHub Client-Side Timeouts:** GitHub's built-in notebook viewer relies on an asynchronous client-side iframe engine with a strict rendering timeout (~5 seconds). Notebooks with extensive stream logs and data manifests frequently exceed this limit.
+2. **Browser Extension Interception:** Browser extensions—especially popup translators/dictionaries (e.g., *Yomitan*, *Google Translate*), privacy guards, or ad-blockers—inject scripts into GitHub's sandboxed preview iframes. GitHub detects this modification as a security violation and aborts rendering.
+
+**Recommended Solutions:**
+* **Bypass via External Viewers (Instant):** Use the direct **[Google Colab](https://colab.research.google.com/github/Wilayat-1472/brisc2025-trustworthy-multitask-mri/blob/main/notebooks/brisc2025_multitask_pipeline.ipynb)** or **[Jupyter nbviewer](https://nbviewer.org/github/Wilayat-1472/brisc2025-trustworthy-multitask-mri/blob/main/notebooks/brisc2025_multitask_pipeline.ipynb)** links above. Both render all code cells, markdown, and outputs independently of GitHub's iframe engine.
+* **Incognito / Private Window:** Open the GitHub notebook link in an Incognito / Private window with browser extensions disabled.
+* **Hard Refresh:** Clear cached iframe data via `Ctrl + F5` (Windows/Linux) or `Cmd + Shift + R` (Mac).
+
+---
 
 ### 1. Clone & Install Dependencies
 ```bash
