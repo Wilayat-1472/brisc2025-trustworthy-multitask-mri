@@ -339,6 +339,13 @@ python -m brisc_mri.evaluate \
 
 Evaluation reports classification, tumor segmentation, and healthy-scan false alarms. It reports conformal metrics only when calibration metadata is available. Generated reports are ignored by Git.
 
+New evaluation reports include SHA-256 hashes of the checkpoint and manifest,
+test similarity-group and tumor-positive counts, and separate empty/multi-class
+conformal-set counts. Manifest validation rejects repeated image paths and exact
+hashes shared across strict splits, even if their similarity-group IDs differ.
+Calibration rejects invalid labels, nonfinite values and unnormalized probabilities.
+These checks do not change or reproduce the historical scores above.
+
 ## Repository structure
 
 ```text
@@ -372,7 +379,7 @@ Run the automated checks with:
 python -m pytest -q
 ```
 
-The local suite passed **7 tests** during repository setup. It covers committed-manifest group separation, path rebasing and preprocessing, required masks, model/checkpoint compatibility, synthetic full inference, conformal edge cases, Grad-CAM cleanup, visualization export, notebook syntax and cleared outputs, and interface behavior with missing weights and changed inputs. Tests use synthetic inputs and temporary weights; they do not establish accuracy on real MRI data.
+The current local suite passes **14 tests**, including regressions for calibration input validation and exact-duplicate split checks. It covers committed-manifest group separation, path rebasing and preprocessing, required masks, model/checkpoint compatibility, synthetic full inference, conformal edge cases, Grad-CAM cleanup, visualization export, notebook syntax and cleared outputs, and interface behavior with missing weights and changed inputs. Tests use synthetic inputs and temporary weights; they do not establish accuracy on real MRI data.
 
 The existing local `best_brisc_model.pt` also passed strict state-dictionary loading and a synthetic inference check. It had no calibration metadata. A compatibility check alone cannot verify checkpoint training provenance or reproduce the notebook's reported scores.
 

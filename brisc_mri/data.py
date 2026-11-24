@@ -41,12 +41,24 @@ def load_manifest(path, data_root=None, check_files=True):
         raise ValueError('Manifest contains unknown class or plane labels.')
     if not df.strict_protocol.isin(('train', 'val_cal', 'test')).all():
         raise ValueError('Unknown strict_protocol split.')
+    if df.pseudo_patient_id.astype(str).str.strip().eq('').any():
+        raise ValueError('Similarity group identifiers must not be empty.')
     if df.groupby('pseudo_patient_id').strict_protocol.nunique().gt(1).any():
         raise ValueError('Pseudo-patient groups overlap across strict splits.')
     if data_root is not None:
         for column in ('image_path', 'mask_path'):
             df[column] = df[column].map(lambda p: resolve_path(p, data_root) if p else '')
     df['has_mask'] = df.mask_path.ne('')
+    # Group labels alone do not protect against an incorrectly assigned image.
+    # Reject repeated paths and cross-split exact hashes independently of pHash.
+    canonical_paths = df.image_path.map(lambda p: str(Path(str(p).replace('\\', '/')).resolve()))
+    if canonical_paths.duplicated().any():
+        raise ValueError('Manifest contains duplicate image paths.')
+    if 'sha256' in df.columns:
+        hashes = df.sha256.astype(str).str.strip().str.lower()
+        hashed = df.loc[hashes.ne('')].assign(_hash=hashes[hashes.ne('')])
+        if hashed.groupby('_hash').strict_protocol.nunique().gt(1).any():
+            raise ValueError('Exact image hashes overlap across strict splits.')
     if (df.tumor_label.ne('no_tumor') & ~df.has_mask).any():
         raise ValueError('Tumor-positive scans require ground-truth masks.')
     if check_files:
@@ -65,6 +77,8 @@ def development_splits(df, seed=42):
     test = df[df.strict_protocol.eq('test')].copy()
     if training.empty or test.empty or pool.pseudo_patient_id.nunique() < 2:
         raise ValueError('Need train, test and at least two val_cal groups.')
+    if df.groupby('pseudo_patient_id').strict_protocol.nunique().gt(1).any():
+        raise ValueError('Similarity groups overlap across strict splits.')
     val_idx, cal_idx = next(GroupShuffleSplit(n_splits=1, test_size=0.5, random_state=seed).split(pool, groups=pool.pseudo_patient_id))
     return training, pool.iloc[val_idx].copy(), pool.iloc[cal_idx].copy(), test
 

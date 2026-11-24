@@ -14,10 +14,18 @@ from .model import PlaneConditionedMultiTaskUNet
 
 
 def conformal_threshold(probs, labels, alpha=0.05):
-    probs = np.asarray(probs)
-    labels = np.asarray(labels, dtype=int)
-    if not 0 < alpha < 1 or len(labels) == 0:
+    probs = np.asarray(probs, dtype=float)
+    labels = np.asarray(labels)
+    if not 0 < alpha < 1 or labels.ndim != 1 or labels.size == 0:
         raise ValueError('Calibration requires samples and 0 < alpha < 1.')
+    if probs.shape != (labels.size, len(CLASS_NAMES)):
+        raise ValueError('Calibration needs one four-class probability row per label.')
+    if (not np.isfinite(probs).all() or (probs < 0).any() or (probs > 1).any()
+            or not np.allclose(probs.sum(axis=1), 1.0, atol=1e-6, rtol=0)):
+        raise ValueError('Calibration probabilities must be finite and sum to one.')
+    if not np.isin(labels, np.arange(len(CLASS_NAMES))).all():
+        raise ValueError('Calibration labels must be integer class indices 0-3.')
+    labels = labels.astype(int)
     scores = 1.0 - probs[np.arange(len(labels)), labels]
     rank = math.ceil((len(labels) + 1) * (1 - alpha))
     # With too few calibration samples, the finite-sample set is all classes.

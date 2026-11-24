@@ -57,6 +57,36 @@ def test_conformal_finite_sample_rank_and_empty_sets():
     assert prediction_set([0.4, 0.3, 0.2, 0.1], None) is None
 
 
+@pytest.mark.parametrize('probs,labels', [
+    ([[0.9, 0.1, 0, 0]], [-1]),
+    ([[0.9, 0.1, 0, 0]], [0.5]),
+    ([[float('nan'), 0.1, 0, 0]], [0]),
+    ([[0.9, 0.2, 0, 0]], [0]),
+    ([[0.9, 0.1]], [0]),
+    ([[0.9, 0.1, 0, 0]], [0, 1]),
+])
+def test_calibration_rejects_invalid_probabilities_and_labels(probs, labels):
+    with pytest.raises(ValueError):
+        conformal_threshold(probs, labels)
+
+
+def test_manifest_rejects_duplicate_paths_and_cross_split_hashes(tmp_path):
+    rows = [dict(image_path=f'{i}.png', mask_path='', tumor_label='no_tumor',
+                 plane_code='ax', pseudo_patient_id=i, strict_protocol=split,
+                 sha256=str(i)) for i, split in enumerate(['train', 'val_cal', 'test'])]
+    path = tmp_path / 'manifest.csv'
+    frame = pd.DataFrame(rows)
+    frame.loc[2, 'image_path'] = './0.png'
+    frame.to_csv(path, index=False)
+    with pytest.raises(ValueError, match='duplicate image paths'):
+        load_manifest(path, check_files=False)
+    frame.loc[2, 'image_path'] = '2.png'
+    frame.loc[2, 'sha256'] = '0'
+    frame.to_csv(path, index=False)
+    with pytest.raises(ValueError, match='hashes overlap'):
+        load_manifest(path, check_files=False)
+
+
 def test_model_checkpoint_and_full_inference(tmp_path):
     # Synthetic weights verify execution only; they are never distributed as trained weights.
     torch.manual_seed(7)

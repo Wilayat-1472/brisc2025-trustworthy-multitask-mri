@@ -29,7 +29,12 @@ def main():
     if test.empty:
         parser.error('Test split is empty.')
     probs, labels, dices, ious, fps = collect(predictor.model, DataLoader(BRISCMultiTaskDataset(test), batch_size=args.batch_size), predictor.device)
-    result = {'test_samples': len(labels), 'accuracy': float(accuracy_score(labels, probs.argmax(1))),
+    result = {'checkpoint_sha256': hashlib.sha256(Path(args.checkpoint).read_bytes()).hexdigest(),
+              'manifest_sha256': hashlib.sha256(Path(args.manifest).read_bytes()).hexdigest(),
+              'evaluation_protocol': 'strict_image_similarity_groups_not_verified_patients',
+              'test_similarity_groups': int(test.pseudo_patient_id.nunique()),
+              'test_samples': len(labels), 'tumor_samples': len(dices),
+              'accuracy': float(accuracy_score(labels, probs.argmax(1))),
               'macro_f1': float(f1_score(labels, probs.argmax(1), labels=range(4), average='macro', zero_division=0)),
               'tumor_dice': float(np.mean(dices)) if dices else None,
               'tumor_iou': float(np.mean(ious)) if ious else None,
@@ -40,6 +45,8 @@ def main():
         result['conformal'] = {'alpha': predictor.alpha, 'q_hat': predictor.q_hat,
                               'empirical_coverage': float(np.mean([CLASS_NAMES[y] in s for y, s in zip(labels, sets)])),
                               'average_set_size': float(np.mean([len(s) for s in sets])),
+                              'empty_sets': sum(len(s) == 0 for s in sets),
+                              'multi_class_sets': sum(len(s) > 1 for s in sets),
                               'review_required': sum(len(s) != 1 for s in sets)}
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     Path(args.output).write_text(json.dumps(result, indent=2) + '\n')
