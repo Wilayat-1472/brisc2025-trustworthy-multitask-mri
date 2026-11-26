@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
 from io import BytesIO
 from pathlib import Path
 
@@ -24,6 +25,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image, UnidentifiedImageError
 from matplotlib.figure import Figure
+
+from src.model import PlaneConditionedMultiTaskUNet
 
 # ── Page config ──────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent
@@ -43,93 +46,38 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── Architecture (must match the saved state_dict exactly) ───────────────────
-class DecoderBlock(nn.Module):
-    def __init__(self, in_ch, skip_ch, out_ch):
-        super().__init__()
-        self.up = nn.ConvTranspose2d(in_ch, out_ch, kernel_size=2, stride=2)
-        self.conv = nn.Sequential(
-            nn.Conv2d(out_ch + skip_ch, out_ch, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_ch), nn.ReLU(inplace=True), nn.Dropout2d(0.1),
-            nn.Conv2d(out_ch, out_ch, kernel_size=3, padding=1, bias=False),
-            nn.BatchNorm2d(out_ch), nn.ReLU(inplace=True),
-        )
-    def forward(self, x, skip=None):
-        x = self.up(x)
-        if skip is not None:
-            x = torch.cat([x, skip], dim=1)
-        return self.conv(x)
-
-
-class PlaneConditionedMultiTaskUNet(nn.Module):
-    def __init__(self, num_classes=4, num_planes=3, pretrained=False):
-        super().__init__()
-        from torchvision.models import resnet34, ResNet34_Weights
-        backbone = resnet34(weights=ResNet34_Weights.DEFAULT if pretrained else None)
-        self.stem = nn.Sequential(backbone.conv1, backbone.bn1, backbone.relu)
-        self.pool = backbone.maxpool
-        self.enc1 = backbone.layer1
-        self.enc2 = backbone.layer2
-        self.enc3 = backbone.layer3
-        self.enc4 = backbone.layer4
-        self.plane_emb = nn.Embedding(num_planes, 64)
-        self.film = nn.Sequential(nn.Linear(64, 256), nn.ReLU(inplace=True), nn.Linear(256, 512 * 2))
-        self.cls_head = nn.Sequential(nn.AdaptiveAvgPool2d(1), nn.Flatten(), nn.Dropout(0.3), nn.Linear(512, num_classes))
-        self.dec4 = DecoderBlock(512, 256, 256)
-        self.dec3 = DecoderBlock(256, 128, 128)
-        self.dec2 = DecoderBlock(128, 64, 64)
-        self.dec1 = DecoderBlock(64, 64, 32)
-        self.final_up = nn.Sequential(nn.ConvTranspose2d(32, 16, kernel_size=2, stride=2), nn.ReLU(inplace=True), nn.Conv2d(16, 1, kernel_size=1))
-
-    def forward(self, x, plane_idx):
-        s0 = self.stem(x)
-        s1 = self.enc1(self.pool(s0))
-        s2 = self.enc2(s1)
-        s3 = self.enc3(s2)
-        bottleneck = self.enc4(s3)
-        p_vec = self.plane_emb(plane_idx)
-        gamma, beta = self.film(p_vec).chunk(2, dim=1)
-        gamma = gamma.unsqueeze(-1).unsqueeze(-1)
-        beta = beta.unsqueeze(-1).unsqueeze(-1)
-        cond_feat = bottleneck * (1.0 + gamma) + beta
-        cls_logits = self.cls_head(cond_feat)
-        d4 = self.dec4(cond_feat, s3)
-        d3 = self.dec3(d4, s2)
-        d2 = self.dec2(d3, s1)
-        d1 = self.dec1(d2, s0)
-        return cls_logits, self.final_up(d1)
-
 
 # ── Model loading (cached per session) ───────────────────────────────────────
 BUNDLE_PATH = ROOT / "models" / "brisc2025_bundle.joblib"
 CHECKPOINT_PATH = ROOT / "checkpoints" / "best_brisc_model.pt"
 
 FALLBACK_CLASSES = ("glioma", "meningioma", "pituitary", "no_tumor")
-FALLBACK_PLANES  = ("axial", "coronal", "sagittal")
-PLANE_CODE_MAP   = {"axial": "ax", "coronal": "co", "sagittal": "sa"}
+FALLBACK_PLANES = ("axial", "coronal", "sagittal")
+
 
 @st.cache_resource(show_spinner="Loading model weights…")
-def load_model(source_path: str):
+def load_model(source_path: str, _mtime_ns: int = 0):
     """Load model from joblib bundle or raw .pt checkpoint. Cached for the session."""
     path = Path(source_path)
     q_hat = None
     classes = list(FALLBACK_CLASSES)
-    planes  = list(FALLBACK_PLANES)
+    planes = list(FALLBACK_PLANES)
     img_size = 256
     norm_mean = [0.485, 0.456, 0.406]
-    norm_std  = [0.229, 0.224, 0.225]
+    norm_std = [0.229, 0.224, 0.225]
 
     if path.suffix == ".joblib":
         bundle = joblib.load(path)
         state_dict = bundle["state_dict"]
-        q_hat    = bundle.get("conformal_qhat")
-        classes  = bundle.get("classes", classes)
-        planes   = bundle.get("planes", planes)
-        img_size = bundle.get("img_size", img_size)
-        norm_mean = bundle.get("norm_mean", norm_mean)
-        norm_std  = bundle.get("norm_std", norm_std)
+        q_hat = bundle.get("conformal_qhat")
+        classes = list(bundle.get("classes", classes))
+        planes = list(bundle.get("planes", planes))
+        img_size = int(bundle.get("img_size", img_size))
+        norm_mean = list(bundle.get("norm_mean", norm_mean))
+        norm_std = list(bundle.get("norm_std", norm_std))
     else:
         from collections.abc import Mapping
+
         payload = torch.load(path, map_location="cpu", weights_only=True)
         if isinstance(payload, Mapping) and "model_state_dict" in payload:
             state_dict = payload["model_state_dict"]
@@ -156,9 +104,9 @@ def load_model(source_path: str):
 
 def preprocess(image: Image.Image, meta: dict) -> torch.Tensor:
     size = meta["img_size"]
-    img  = image.convert("RGB").resize((size, size), Image.BILINEAR)
-    arr  = np.asarray(img, dtype=np.float32) / 255.0
-    arr  = (arr - np.array(meta["norm_mean"])) / np.array(meta["norm_std"])
+    img = image.convert("RGB").resize((size, size), Image.BILINEAR)
+    arr = np.asarray(img, dtype=np.float32) / 255.0
+    arr = (arr - np.array(meta["norm_mean"], dtype=np.float32)) / np.array(meta["norm_std"], dtype=np.float32)
     return torch.from_numpy(arr.transpose(2, 0, 1)).unsqueeze(0)
 
 
@@ -170,32 +118,38 @@ def run_inference(model, meta: dict, image: Image.Image, plane: str, n_passes: i
 
     # Grad-CAM
     activations: list[torch.Tensor] = []
-    gradients:   list[torch.Tensor] = []
+    gradients: list[torch.Tensor] = []
     fwd = model.enc4.register_forward_hook(lambda _, __, o: activations.append(o))
     bwd = model.enc4.register_full_backward_hook(lambda _, __, g: gradients.append(g[0]))
-
-    cls_logits, _ = model(x, p)
-    probs = torch.softmax(cls_logits, dim=1)[0].detach().numpy()
-    target = int(probs.argmax())
-    model.zero_grad()
-    cls_logits[0, target].backward()
-    fwd.remove(); bwd.remove()
+    try:
+        cls_logits, _ = model(x, p)
+        probs = torch.softmax(cls_logits, dim=1)[0].detach().numpy()
+        target = int(probs.argmax())
+        model.zero_grad()
+        cls_logits[0, target].backward()
+    finally:
+        fwd.remove()
+        bwd.remove()
 
     weights = gradients[0].mean(dim=(2, 3), keepdim=True)
     cam = F.relu((weights * activations[0]).sum(dim=1, keepdim=True))
-    cam = F.interpolate(cam, size=(meta["img_size"], meta["img_size"]), mode="bilinear", align_corners=False)[0, 0].detach().numpy()
+    cam = F.interpolate(
+        cam, size=(meta["img_size"], meta["img_size"]), mode="bilinear", align_corners=False
+    )[0, 0].detach().numpy()
     cam = (cam - cam.min()) / (cam.max() - cam.min() + 1e-8)
 
-    # MC-dropout uncertainty
-    for m in model.modules():
-        if isinstance(m, nn.Dropout2d):
-            m.train()
-    seg_samples = []
-    with torch.no_grad():
-        for _ in range(n_passes):
-            _, seg_out = model(x.detach(), p)
-            seg_samples.append(torch.sigmoid(seg_out)[0, 0].numpy())
-    model.eval()
+    # MC-dropout uncertainty (only Dropout2d active; BatchNorm stays in eval)
+    try:
+        for m in model.modules():
+            if isinstance(m, nn.Dropout2d):
+                m.train()
+        seg_samples = []
+        with torch.no_grad():
+            for _ in range(n_passes):
+                _, seg_out = model(x.detach(), p)
+                seg_samples.append(torch.sigmoid(seg_out)[0, 0].numpy())
+    finally:
+        model.eval()
 
     mean_mask = np.mean(seg_samples, axis=0)
     uncertainty = np.std(seg_samples, axis=0)
@@ -237,8 +191,15 @@ def render_figure(image: Image.Image, mean_mask, uncertainty, cam, meta: dict, p
 with st.sidebar:
     st.header("⚙️ Settings")
 
-    # Auto-detect best available source
-    default_source = str(BUNDLE_PATH) if BUNDLE_PATH.exists() else str(CHECKPOINT_PATH)
+    # Auto-detect best available source (respect BRISC_CHECKPOINT env var if set)
+    env_source = os.environ.get("BRISC_CHECKPOINT")
+    if env_source:
+        default_source = env_source
+    elif BUNDLE_PATH.exists():
+        default_source = str(BUNDLE_PATH)
+    else:
+        default_source = str(CHECKPOINT_PATH)
+
     model_source = st.text_input("Model source (bundle or .pt)", value=default_source)
 
     plane_name = st.selectbox(
@@ -246,15 +207,20 @@ with st.sidebar:
         ["Axial", "Coronal", "Sagittal"],
         index=0,
     )
-    n_passes = st.slider("MC-dropout passes", min_value=1, max_value=30, value=10,
-                         help="More passes = steadier uncertainty, slower inference.")
+    n_passes = st.slider(
+        "MC-dropout passes",
+        min_value=1,
+        max_value=30,
+        value=10,
+        help="More passes = steadier uncertainty, slower inference.",
+    )
 
     st.divider()
-    if BUNDLE_PATH.exists():
-        sz = BUNDLE_PATH.stat().st_size / 1e6
-        st.success(f"✅ Bundle found ({sz:.0f} MB)")
+    if Path(model_source).expanduser().is_file():
+        sz = Path(model_source).expanduser().stat().st_size / 1e6
+        st.success(f"✅ Weights found ({sz:.1f} MB)")
     else:
-        st.warning("⚠️ Bundle not found at models/brisc2025_bundle.joblib")
+        st.warning("⚠️ Weights not found at configured path")
 
     st.markdown(
         "**Expected input**\n\nPNG or JPEG T1 MRI slice.  "
@@ -309,11 +275,12 @@ with about_tab:
 # ── Scan tab ──────────────────────────────────────────────────────────────────
 with scan_tab:
     model_path = Path(model_source).expanduser()
-    model_ready = model_path.exists() and model_path.is_file()
+    model_ready = model_path.is_file()
     if not model_ready:
-        st.error(
-            f"Model not found at `{model_source}`.  "
-            "Make sure `models/brisc2025_bundle.joblib` exists (see README)."
+        st.info(
+            "Model weights are needed to analyze a scan. "
+            "Place `models/brisc2025_bundle.joblib` or `checkpoints/best_brisc_model.pt` "
+            "on disk, or set its path in the sidebar."
         )
 
     # ── Upload widget ─────────────────────────────────────────────────────────
@@ -340,7 +307,7 @@ with scan_tab:
                         image = src.convert("L").copy()
                 prev_col, _ = st.columns([1, 2])
                 if image:
-                    prev_col.image(image, caption=f"Uploaded: {uploaded.name}", width=280)
+                    prev_col.image(image, caption=f"Uploaded: {getattr(uploaded, 'name', 'slice')}", width=280)
         except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as e:
             st.error(f"Could not open image: {e}")
 
@@ -360,8 +327,8 @@ with scan_tab:
 
     if analyze_btn:
         try:
-            model, meta = load_model(str(model_path))
-            plane_key = plane_name.lower()   # "axial" / "coronal" / "sagittal"
+            model, meta = load_model(str(model_path), model_path.stat().st_mtime_ns)
+            plane_key = plane_name.lower()
 
             with st.spinner(f"Running inference on {plane_name} plane…"):
                 probs, pred_idx, mean_mask, uncertainty, cam = run_inference(
@@ -387,7 +354,6 @@ with scan_tab:
             }
         except Exception as e:
             st.error(f"Inference failed: {e}")
-            raise
 
     # ── Results ───────────────────────────────────────────────────────────────
     if "result" in st.session_state:
@@ -413,8 +379,9 @@ with scan_tab:
             else:
                 st.success(f"✅ Single-class conformal set → **{cset_str}** at 95 % coverage guarantee.")
         else:
-            m3.metric("Conformal set", "N/A (no calibration)")
+            m3.metric("Conformal set", "N/A")
             m4.metric("q̂", "—")
+            st.info("Conformal calibration is unavailable for these weights. No calibrated prediction set is reported.")
 
         # Probability bar chart
         st.subheader("Class probabilities")

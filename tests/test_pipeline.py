@@ -156,8 +156,71 @@ def test_interface_prediction_and_stale_result_clear(tmp_path, monkeypatch):
     assert not app.button[0].disabled
     app.button[0].click().run()
     assert not app.exception and not app.error
-    assert len(app.metric) == 2
+    assert len(app.metric) == 4
     assert len(app.get('download_button')) == 3
     assert any('calibration is unavailable' in i.value for i in app.info)
     app.sidebar.selectbox[0].select('Coronal').run()
     assert not app.exception and not app.metric
+
+
+def test_src_model_and_predict_joblib_bundle(tmp_path):
+    import joblib
+    from src.model import PlaneConditionedMultiTaskUNet as SrcUNet
+    from predict import load_brisc_bundle, predict_slice
+
+    model = SrcUNet(num_classes=4, num_planes=3, pretrained=False).eval()
+    bundle = {
+        'state_dict': {k: v.detach().cpu() for k, v in model.state_dict().items()},
+        'classes': ['glioma', 'meningioma', 'pituitary', 'no_tumor'],
+        'planes': ['axial', 'coronal', 'sagittal'],
+        'img_size': 256,
+        'conformal_qhat': 0.0579,
+        'norm_mean': [0.485, 0.456, 0.406],
+        'norm_std': [0.229, 0.224, 0.225],
+    }
+    bundle_path = tmp_path / 'test_bundle.joblib'
+    joblib.dump(bundle, bundle_path, compress=1)
+
+    loaded_model, loaded_bundle = load_brisc_bundle(bundle_path)
+    assert loaded_bundle['classes'] == ['glioma', 'meningioma', 'pituitary', 'no_tumor']
+
+    sample_img = tmp_path / 'sample.png'
+    Image.new('L', (64, 64), 140).save(sample_img)
+    out_vis = tmp_path / 'overlay.png'
+    res = predict_slice(sample_img, plane='axial', out_vis=str(out_vis), bundle_path=bundle_path)
+    assert res['pred_class'] in bundle['classes']
+    assert out_vis.is_file() and out_vis.stat().st_size > 0
+
+
+def test_interface_with_joblib_bundle(tmp_path, monkeypatch):
+    from io import BytesIO
+    import joblib
+    import streamlit as st
+    from streamlit.testing.v1 import AppTest
+    from src.model import PlaneConditionedMultiTaskUNet as SrcUNet
+
+    model = SrcUNet(num_classes=4, num_planes=3, pretrained=False).eval()
+    bundle = {
+        'state_dict': {k: v.detach().cpu() for k, v in model.state_dict().items()},
+        'classes': ['glioma', 'meningioma', 'pituitary', 'no_tumor'],
+        'planes': ['axial', 'coronal', 'sagittal'],
+        'img_size': 256,
+        'conformal_qhat': 0.0579,
+        'norm_mean': [0.485, 0.456, 0.406],
+        'norm_std': [0.229, 0.224, 0.225],
+    }
+    bundle_path = tmp_path / 'test_bundle.joblib'
+    joblib.dump(bundle, bundle_path, compress=1)
+
+    image = BytesIO()
+    Image.new('L', (48, 48), 130).save(image, format='PNG')
+    monkeypatch.setattr(st, 'file_uploader', lambda *args, **kwargs: image)
+    monkeypatch.setenv('BRISC_CHECKPOINT', str(bundle_path))
+    app = AppTest.from_file(str(ROOT / 'app.py'), default_timeout=30).run()
+    app.sidebar.slider[0].set_value(1)
+    app.run()
+    assert not app.button[0].disabled
+    app.button[0].click().run()
+    assert not app.exception and not app.error
+    assert len(app.metric) == 4
+    assert len(app.get('download_button')) == 3

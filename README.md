@@ -39,7 +39,7 @@ The original Colab experiment:
 7. Generated a three-example visualization showing MRI inputs, ground-truth masks, predicted masks, uncertainty, and Grad-CAM.
 8. Attempted a Gradio upload interface and wrote a standalone Gradio script. The saved interactive run recorded a `NameError` for `predict_with_uncertainty_and_cam`; it does not establish successful end-to-end upload inference in that original runtime.
 
-The subsequent repository work added an importable `brisc_mri` package, a Streamlit upload interface, a portable Colab/Gradio workflow, checkpoint compatibility, automated tests, and a revised training protocol with separate validation and calibration groups. The existing local checkpoint was successfully loaded and exercised with a synthetic input. That execution check does not independently reproduce its medical performance.
+The subsequent repository work added an importable `brisc_mri` package, a compressed CPU-ready `joblib` model bundle ([models/brisc2025_bundle.joblib](models/brisc2025_bundle.joblib), 88 MB), a standalone CLI inference script ([predict.py](predict.py) + [src/model.py](src/model.py)), a drag-and-drop Streamlit upload interface ([app.py](app.py)) supporting both `.joblib` bundles and `.pt` checkpoints, a portable Colab/Gradio workflow, automated tests, and a revised training protocol with separate validation and calibration groups. The existing local checkpoint was successfully loaded and exercised with a synthetic input. That execution check does not independently reproduce its medical performance.
 
 ## Dataset and manifest construction
 
@@ -259,29 +259,34 @@ git clone https://github.com/Wilayat-1472/brisc2025-trustworthy-multitask-mri.gi
 cd brisc2025-trustworthy-multitask-mri
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install -e ".[data,dev]"
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+pip install -e ".[dev]"
 ```
 
-Place an existing trained checkpoint at:
+The repository includes the compressed CPU-ready bundle at [`models/brisc2025_bundle.joblib`](models/brisc2025_bundle.joblib) (~88 MB, `compress=3`, `q_hat = 0.0579`). You can also point the app at a `.pt` checkpoint at `checkpoints/best_brisc_model.pt` via the sidebar or `BRISC_CHECKPOINT`.
 
-```text
-checkpoints/best_brisc_model.pt
-```
-
-Then launch:
+Launch the drag-and-drop web interface:
 
 ```bash
-python -m streamlit run app.py
+streamlit run app.py
 ```
 
-Open **http://localhost:8501**. The checkpoint path can also be entered in the sidebar or supplied through `BRISC_CHECKPOINT`. A fresh clone does not include the weights: `.pt` files are excluded from Git. The interface can start without weights, but analysis remains disabled until a checkpoint is supplied; it does not substitute randomly initialized weights.
+Open **http://localhost:8501**:
 
-To analyze a slice:
+1. Drag and drop (or click to upload) one PNG or JPEG T1 MRI slice.
+2. Select **Axial**, **Coronal**, or **Sagittal** in the sidebar to match its orientation (defaults to Axial).
+3. Choose the number of MC dropout passes and click **▶ Analyze MRI slice**.
+4. Inspect class probabilities, conformal prediction set, segmentation mask, MC-dropout uncertainty, and Grad-CAM. Download the JSON report, binary-mask PNG, or visualization PNG.
 
-1. Upload one PNG or JPEG T1 MRI slice.
-2. Select Axial, Coronal, or Sagittal to match its orientation.
-3. Choose the number of MC dropout passes and click **Analyze MRI slice**.
-4. Inspect class probabilities, segmentation, uncertainty, and Grad-CAM. Download the JSON report, binary-mask PNG, or visualization PNG.
+### Run CLI inference
+
+For quick single-slice inference from the terminal without launching the web UI:
+
+```bash
+python3 predict.py path/to/mri_slice.jpg axial
+```
+
+This loads `models/brisc2025_bundle.joblib` on CPU, prints the predicted class probabilities and conformal prediction set, and saves `prediction_overlay.png` in the project root.
 
 Uploads are processed in memory. Masks and maps use the model's 256 × 256 grid. The interface does not parse DICOM/NIfTI volumes or infer anatomical plane automatically. Class probabilities are model outputs and should not be interpreted as diagnostic certainty.
 
@@ -349,7 +354,14 @@ These checks do not change or reproduce the historical scores above.
 ## Repository structure
 
 ```text
-app.py                                  Streamlit upload interface
+app.py                                  Streamlit drag-and-drop upload interface (.joblib + .pt)
+predict.py                              Local CPU CLI inference + mask overlay script
+src/
+  __init__.py                           Exports PlaneConditionedMultiTaskUNet
+  model.py                              Exact ResNet34 + FiLM + U-Net architecture
+models/
+  brisc2025_bundle.joblib               88 MB compressed CPU bundle (weights + q_hat + metadata)
+  README.md                             Bundle download / release notes
 brisc_mri/
   data.py                               Manifest, preprocessing, datasets, splits
   model.py                              ResNet34, FiLM, and U-Net decoder
@@ -366,9 +378,10 @@ data/brisc2025_clean.csv                 6,000-image derived manifest
 assets/brisc2025_clinical_diagnostics.png Original qualitative visualization
 checkpoints/README.md                    Model-weight handling instructions
 docs/                                   Methodology, historical results, Git guide
-tests/test_pipeline.py                   Synthetic pipeline/interface checks
+tests/test_pipeline.py                   Synthetic pipeline/interface/CLI checks
 .github/workflows/tests.yml              CPU test workflow
 pyproject.toml                          Package and dependency configuration
+requirements.txt                        CPU-ready runtime dependencies
 ```
 
 ## Validation and limitations
@@ -379,7 +392,7 @@ Run the automated checks with:
 python -m pytest -q
 ```
 
-The current local suite passes **14 tests**, including regressions for calibration input validation and exact-duplicate split checks. It covers committed-manifest group separation, path rebasing and preprocessing, required masks, model/checkpoint compatibility, synthetic full inference, conformal edge cases, Grad-CAM cleanup, visualization export, notebook syntax and cleared outputs, and interface behavior with missing weights and changed inputs. Tests use synthetic inputs and temporary weights; they do not establish accuracy on real MRI data.
+The current suite covers **16 tests**, including regressions for calibration input validation and exact-duplicate split checks. It covers committed-manifest group separation, path rebasing and preprocessing, required masks, model/checkpoint compatibility, synthetic full inference, `.joblib` bundle loading and CLI `predict.py` execution, conformal edge cases, Grad-CAM cleanup, visualization export, notebook syntax and cleared outputs, and Streamlit interface behavior with missing weights, `.pt` checkpoints, `.joblib` bundles, and changed inputs. Tests use synthetic inputs and temporary weights; they do not establish accuracy on real MRI data.
 
 The existing local `best_brisc_model.pt` also passed strict state-dictionary loading and a synthetic inference check. It had no calibration metadata. A compatibility check alone cannot verify checkpoint training provenance or reproduce the notebook's reported scores.
 
