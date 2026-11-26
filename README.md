@@ -351,6 +351,11 @@ These checks do not change or reproduce the historical scores above.
 
 ## Repository structure
 
+The codebase is organized into two complementary layers:
+
+- **Lightweight CPU inference (`src/`, `predict.py`, `app.py`, `models/`):** Runs standalone inference from the compressed `models/brisc2025_bundle.joblib` bundle without needing the training dataset or full pipeline.
+- **Research & training package (`brisc_mri/`):** Installable package (`pip install -e .`) for dataset preparation (`prepare.py`), manifest validation (`data.py`), training and held-out calibration (`train.py`, `losses.py`), frozen-checkpoint evaluation (`evaluate.py`), `.pt` inference/visualization (`inference.py`, `visualization.py`), and automated tests (`tests/test_pipeline.py`).
+
 ```text
 app.py                                  Streamlit drag-and-drop upload interface (.joblib + .pt)
 predict.py                              Local CPU CLI inference + mask overlay script
