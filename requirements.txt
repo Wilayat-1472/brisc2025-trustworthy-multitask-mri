@@ -1,1 +1,19 @@
--e .[data]
+# Core runtime (CPU-only PyTorch — install with the index URL below)
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+torch>=2.3,<3
+torchvision>=0.18,<1
+
+# Data & image utilities
+numpy>=1.24,<3
+Pillow>=10,<13
+matplotlib>=3.7,<4
+
+# Model serialisation
+joblib>=1.3.0
+
+# Data pipeline extras (optional)
+pandas>=2,<3
+scikit-learn>=1.3,<2
+
+# Development / testing
+pytest>=8,<10
