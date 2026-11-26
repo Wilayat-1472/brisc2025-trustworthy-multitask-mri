@@ -37,9 +37,8 @@ The original Colab experiment:
 5. Selected and saved `best_brisc_model.pt` using validation classification and segmentation performance.
 6. Evaluated classification, tumor segmentation, healthy-scan false alarms, and conformal prediction on the experimental test set.
 7. Generated a three-example visualization showing MRI inputs, ground-truth masks, predicted masks, uncertainty, and Grad-CAM.
-8. Attempted a Gradio upload interface and wrote a standalone Gradio script. The saved interactive run recorded a `NameError` for `predict_with_uncertainty_and_cam`; it does not establish successful end-to-end upload inference in that original runtime.
 
-The subsequent repository work added an importable `brisc_mri` package, a compressed CPU-ready `joblib` model bundle ([models/brisc2025_bundle.joblib](models/brisc2025_bundle.joblib), 88 MB), a standalone CLI inference script ([predict.py](predict.py) + [src/model.py](src/model.py)), a drag-and-drop Streamlit upload interface ([app.py](app.py)) supporting both `.joblib` bundles and `.pt` checkpoints, a portable Colab/Gradio workflow, automated tests, and a revised training protocol with separate validation and calibration groups. The existing local checkpoint was successfully loaded and exercised with a synthetic input. That execution check does not independently reproduce its medical performance.
+The subsequent repository work added an importable `brisc_mri` package, a compressed CPU-ready `joblib` model bundle ([models/brisc2025_bundle.joblib](models/brisc2025_bundle.joblib), 88 MB), a standalone CLI inference script ([predict.py](predict.py) + [src/model.py](src/model.py)), a drag-and-drop Streamlit upload interface ([app.py](app.py)) supporting both `.joblib` bundles and `.pt` checkpoints, a portable Colab workflow, automated tests, and a revised training protocol with separate validation and calibration groups. The existing local checkpoint was successfully loaded and exercised with a synthetic input. That execution check does not independently reproduce its medical performance.
 
 ## Dataset and manifest construction
 
@@ -298,8 +297,7 @@ Open [notebooks/brisc2025_multitask_pipeline.ipynb](https://colab.research.googl
 2. Run dataset download and manifest validation. The cell prints the training, validation, calibration, and test sizes for the revised protocol.
 3. Either copy existing weights into `checkpoints/`, or set `RUN_TRAINING = True` to train and calibrate a new checkpoint. Training defaults to `False`.
 4. Set `RUN_EVALUATION = True` to evaluate the frozen checkpoint. Evaluation defaults to `False`.
-5. Run the Gradio cell, which imports the predictor and visualization functions explicitly.
-6. Run the final download cell before ending the runtime to save the checkpoint to your computer.
+5. Run the final download cell before ending the runtime to save the checkpoint to your computer, then use `streamlit run app.py` locally for the upload interface.
 
 The original executed notebook is available through [the supplied Colab link](https://colab.research.google.com/drive/1WFaUv4aDm8Tn7qee8PqLJ5wr17NdKpQA). The repository also preserves the original core experiment source, with outputs cleared, in [notebooks/historical_experiment.ipynb](notebooks/historical_experiment.ipynb). Its hardcoded Kaggle/Colab paths must be adapted if rerunning that historical code.
 
