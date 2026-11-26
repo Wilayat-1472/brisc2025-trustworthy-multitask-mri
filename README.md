@@ -293,7 +293,7 @@ Uploads are processed in memory. Masks and maps use the model's 256 × 256 grid.
 
 Open [notebooks/brisc2025_multitask_pipeline.ipynb](https://colab.research.google.com/github/Wilayat-1472/brisc2025-trustworthy-multitask-mri/blob/main/notebooks/brisc2025_multitask_pipeline.ipynb) and select a GPU runtime for training.
 
-1. Run setup to clone the repository and install `.[data,colab]`.
+1. Run setup to clone the repository and install `.[data]`.
 2. Run dataset download and manifest validation. The cell prints the training, validation, calibration, and test sizes for the revised protocol.
 3. Either copy existing weights into `checkpoints/`, or set `RUN_TRAINING = True` to train and calibrate a new checkpoint. Training defaults to `False`.
 4. Set `RUN_EVALUATION = True` to evaluate the frozen checkpoint. Evaluation defaults to `False`.
@@ -359,7 +359,6 @@ src/
   model.py                              Exact ResNet34 + FiLM + U-Net architecture
 models/
   brisc2025_bundle.joblib               88 MB compressed CPU bundle (weights + q_hat + metadata)
-  README.md                             Bundle download / release notes
 brisc_mri/
   data.py                               Manifest, preprocessing, datasets, splits
   model.py                              ResNet34, FiLM, and U-Net decoder

@@ -17,7 +17,6 @@ dependencies = [
 
 [project.optional-dependencies]
 data = ["kagglehub>=0.2,<1", "imagehash>=4.3,<5", "scipy>=1.11,<2"]
-colab = ["gradio>=5,<7"]
 dev = ["pytest>=8,<10"]
 
 [tool.setuptools.packages.find]
